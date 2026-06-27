@@ -1,4 +1,5 @@
 const Article = require('../models/Article');
+const { uploadFromBuffer } = require('../utils/cloudinaryUpload');
 
 // Helper — normalize article so URLs are absolute for the frontend
 const normalize = (article) => {
@@ -99,7 +100,8 @@ const createArticle = async (req, res) => {
   try {
     const articleData = { ...req.body };
     if (req.file) {
-      articleData.featuredImage = `/uploads/articles/${req.file.filename}`;
+      const result = await uploadFromBuffer(req.file.buffer, 'quran_academy/articles', 'image');
+      articleData.featuredImage = result.secure_url;
     }
     if (req.body.tags && typeof req.body.tags === 'string') {
       try {
@@ -137,7 +139,8 @@ const updateArticle = async (req, res) => {
   try {
     const updateData = { ...req.body };
     if (req.file) {
-      updateData.featuredImage = `/uploads/articles/${req.file.filename}`;
+      const result = await uploadFromBuffer(req.file.buffer, 'quran_academy/articles', 'image');
+      updateData.featuredImage = result.secure_url;
     }
     if (req.body.tags && typeof req.body.tags === 'string') {
       try {
