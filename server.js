@@ -20,11 +20,7 @@ const contactRoutes      = require('./routes/contact');
 const admissionRoutes    = require('./routes/admission');
 const adminRoutes        = require('./routes/admin');
 
-// Ensure upload directories exist
-['uploads', 'uploads/courses', 'uploads/library', 'uploads/study-materials'].forEach(dir => {
-  const dirPath = path.join(__dirname, dir);
-  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-});
+// File uploads are now handled directly via Cloudinary (memory storage)
 
 // Connect to database
 connectDB();

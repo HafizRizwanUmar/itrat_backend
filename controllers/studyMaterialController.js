@@ -1,8 +1,8 @@
 const StudyMaterial = require('../models/StudyMaterial');
+const { uploadFromBuffer } = require('../utils/cloudinaryUpload');
 const path = require('path');
-const fs = require('fs');
+// Removed fs dependency for uploads
 
-// Helper function to format file size
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -163,111 +163,15 @@ const downloadStudyMaterial = async (req, res) => {
     }
 
     // Handle both new file upload system and legacy URL system
-    if (material.fileName && material.filePath) {
-      // New file upload system
-      let filePath = material.filePath;
-      
-      // If the stored filePath is not absolute, resolve it relative to the project root
-      if (!path.isAbsolute(filePath)) {
-        filePath = path.resolve(process.cwd(), filePath);
-      }
-      
-      let actualFilePath = filePath;
-      
-      if (!fs.existsSync(actualFilePath)) {
-        console.log("File not found at stored path. Attempting alternative paths.");
-        // Fallback to common upload directories if the stored path doesn't exist
-        const possibleFallbackPaths = [
-          path.join(process.cwd(), 'uploads', 'study-materials', material.fileName),
-          path.join(__dirname, '..', 'uploads', 'study-materials', material.fileName),
-        ];
-
-        for (const testPath of possibleFallbackPaths) {
-          console.log('Checking fallback path:', testPath);
-          if (fs.existsSync(testPath)) {
-            actualFilePath = testPath;
-            console.log('File found at fallback path:', actualFilePath);
-            break;
-          }
-        }
-      }
-      
-      if (!actualFilePath || !fs.existsSync(actualFilePath)) {
-        console.log('File not found in any of the possible paths');
-        return res.status(404).json({
-          success: false,
-          error: 'File not found on server. Please contact administrator.'
-        });
-      }
-
-      // Increment download count BEFORE serving the file
+    if (material.fileUrl) {
       try {
         await StudyMaterial.findByIdAndUpdate(req.params.id, {
           $inc: { downloadCount: 1 }
         });
-        console.log('Download count incremented for material:', req.params.id);
       } catch (updateError) {
         console.error('Error updating download count:', updateError);
-        // Continue with download even if count update fails
       }
-
-      // Get file stats
-      const stat = fs.statSync(actualFilePath);
-      const fileSize = stat.size;
-      
-      // Determine MIME type
-      const fileExtension = path.extname(actualFilePath).substring(1);
-      const mimeType = getMimeTypeFromExtension(fileExtension);
-      
-      // Set appropriate headers for file download
-      const originalFileName = material.originalFileName || material.fileName;
-      
-      console.log('Serving file:', {
-        path: actualFilePath,
-        size: fileSize,
-        mimeType: mimeType,
-        originalFileName: originalFileName
-      });
-      
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Content-Length', fileSize);
-      res.setHeader('Content-Disposition', `attachment; filename="${originalFileName}"`);
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      
-      // Create read stream and pipe to response
-      const fileStream = fs.createReadStream(actualFilePath);
-      
-      fileStream.on('error', (error) => {
-        console.error('File stream error:', error);
-        if (!res.headersSent) {
-          res.status(500).json({
-            success: false,
-            error: 'Error reading file'
-          });
-        }
-      });
-      
-      fileStream.on('end', () => {
-        console.log('File download completed for:', originalFileName);
-      });
-      
-      fileStream.pipe(res);
-      
-    } else if (material.fileUrl) {
-      // Legacy URL system - increment count and redirect
-      try {
-        await StudyMaterial.findByIdAndUpdate(req.params.id, {
-          $inc: { downloadCount: 1 }
-        });
-        console.log('Download count incremented for legacy material:', req.params.id);
-      } catch (updateError) {
-        console.error('Error updating download count for legacy material:', updateError);
-      }
-      
-      console.log('Redirecting to legacy URL:', material.fileUrl);
-      res.redirect(material.fileUrl);
+      return res.redirect(material.fileUrl);
     } else {
       console.log('No file or URL available for material:', req.params.id);
       return res.status(404).json({
@@ -295,7 +199,6 @@ const createStudyMaterial = async (req, res) => {
     const { title, description, courseId, lessonNumber, externalLink } = req.body;
 
     if (!title || !description || !courseId) {
-      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(400).json({ success: false, error: 'Title, description, and course are required' });
     }
 
@@ -321,8 +224,11 @@ const createStudyMaterial = async (req, res) => {
 
       const fileSize = formatFileSize(req.file.size);
       const fileType = getFileTypeFromMime(req.file.mimetype);
-      const fileName = req.file.filename;
+      const fileName = req.file.originalname;
       const originalFileName = req.file.originalname;
+
+      // Upload buffer to Cloudinary
+      const result = await uploadFromBuffer(req.file.buffer, 'quran_academy/study_materials', 'raw');
 
       materialData = {
         title,
@@ -332,7 +238,8 @@ const createStudyMaterial = async (req, res) => {
         originalFileName,
         fileType,
         fileSize,
-        filePath: req.file.path,
+        fileUrl: result.secure_url,
+        filePath: 'cloudinary',
         downloadCount: 0,
         ...(lessonNumber && { lessonNumber: parseInt(lessonNumber) })
       };
@@ -342,7 +249,6 @@ const createStudyMaterial = async (req, res) => {
     console.log('Study material created successfully:', material._id);
     res.status(201).json({ success: true, data: normalize(material) });
   } catch (error) {
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     console.error('Error creating study material:', error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ success: false, error: Object.values(error.errors).map(v => v.message).join(', ') });

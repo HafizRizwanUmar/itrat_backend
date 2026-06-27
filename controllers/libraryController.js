@@ -1,12 +1,8 @@
 const LibraryMaterial = require('../models/LibraryMaterial');
+const { uploadFromBuffer } = require('../utils/cloudinaryUpload');
 const path = require('path');
-const fs = require('fs');
+// Remove local filesystem dependencies for uploads since Vercel is read-only
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
 // Helper — normalize material so URLs are absolute for the frontend
 const normalize = (material) => {
@@ -121,20 +117,10 @@ const downloadLibraryMaterial = async (req, res) => {
       return res.redirect(material.fileUrl);
     }
     
-    // Local file (legacy)
-    const filePath = path.join(__dirname, '..', material.fileUrl);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ success: false, error: 'File not found on server' });
-    }
-    const filename = `${material.title}.${material.fileType}`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-    fileStream.on('error', (error) => {
-      console.error('Error streaming file:', error);
-      if (!res.headersSent) res.status(500).json({ success: false, error: 'Error downloading file' });
-    });
+    // Since files are now on Cloudinary, we should never reach here for new uploads,
+    // but for legacy we return 404 since local files are not on Vercel
+    return res.status(404).json({ success: false, error: 'Legacy local file not found on server' });
+
   } catch (error) {
     console.error('Error downloading material:', error);
     res.status(500).json({ success: false, error: 'Server error while downloading material' });
@@ -180,17 +166,20 @@ const createLibraryMaterial = async (req, res) => {
       const fileExtension = path.extname(req.file.originalname).toLowerCase();
       const fileType = fileExtension.replace('.', '');
       const allowedFileTypes = ['pdf', 'doc', 'docx', 'mp3', 'mp4', 'avi', 'mov'];
+      
       if (!allowedFileTypes.includes(fileType)) {
-        try { fs.unlinkSync(req.file.path); } catch(e) {}
         return res.status(400).json({ success: false, error: `Invalid file type. Allowed: ${allowedFileTypes.join(', ')}` });
       }
+
+      // Upload buffer to Cloudinary
+      const result = await uploadFromBuffer(req.file.buffer, 'quran_academy/library', 'raw');
 
       materialData = {
         title: title.trim(),
         description: description.trim(),
         category: category.toLowerCase(),
         author: author ? author.trim() : '',
-        fileUrl: `/uploads/${req.file.filename}`,
+        fileUrl: result.secure_url,
         fileType,
         fileSize: (req.file.size / 1024 / 1024).toFixed(2) + ' MB'
       };
@@ -200,7 +189,6 @@ const createLibraryMaterial = async (req, res) => {
     res.status(201).json({ success: true, data: normalize(material) });
   } catch (error) {
     console.error('Error in createLibraryMaterial:', error);
-    if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch(e) {} }
     if (error.name === 'ValidationError') {
       return res.status(400).json({ success: false, error: Object.values(error.errors).map(v => v.message).join(', ') });
     }

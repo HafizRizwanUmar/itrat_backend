@@ -1,4 +1,5 @@
 const Course = require('../models/Course');
+const { uploadFromBuffer } = require('../utils/cloudinaryUpload');
 const path = require('path');
 
 // Helper — normalize course so `image` is always present for the frontend
@@ -77,11 +78,11 @@ const createCourse = async (req, res) => {
   try {
     const courseData = { ...req.body };
 
-    // Handle image upload — store path in both `image` and `imageUrl`
+    // Handle image upload — store cloudinary URL in both `image` and `imageUrl`
     if (req.file) {
-      const imagePath = `/uploads/courses/${req.file.filename}`;
-      courseData.image    = imagePath;
-      courseData.imageUrl = imagePath;
+      const result = await uploadFromBuffer(req.file.buffer, 'quran_academy/courses', 'image');
+      courseData.image    = result.secure_url;
+      courseData.imageUrl = result.secure_url;
     }
 
     // Parse syllabus if sent as JSON string
@@ -111,9 +112,9 @@ const updateCourse = async (req, res) => {
     const updateData = { ...req.body };
 
     if (req.file) {
-      const imagePath = `/uploads/courses/${req.file.filename}`;
-      updateData.image    = imagePath;
-      updateData.imageUrl = imagePath;
+      const result = await uploadFromBuffer(req.file.buffer, 'quran_academy/courses', 'image');
+      updateData.image    = result.secure_url;
+      updateData.imageUrl = result.secure_url;
     }
 
     if (updateData.syllabus && typeof updateData.syllabus === 'string') {
