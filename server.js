@@ -54,7 +54,7 @@ app.use('/api/auth', authLimiter);
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean)
+  ? (process.env.ALLOWED_ORIGINS || '*').split(',').map(o => o.trim()).filter(Boolean)
   : [
       'http://localhost:3000',
       'http://localhost:5173',
@@ -66,7 +66,9 @@ app.use(cors({
   origin: (origin, cb) => {
     // Allow no-origin requests (Postman, curl, server-to-server)
     if (!origin) return cb(null, true);
-    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
+    // If wildcard set, allow all
+    if (allowedOrigins.includes('*')) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -126,18 +128,20 @@ app.use('*', (req, res) => {
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Start server ──────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🕌  Quran O Itrat Academy API`);
-  console.log(`   ├─ Mode: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   ├─ Port: ${PORT}`);
-  console.log(`   └─ URL:  http://localhost:${PORT}/api/health\n`);
-});
+// ── Start server (skip on Vercel serverless) ─────────────────────────────────
+if (process.env.VERCEL !== '1') {
+  const PORT = process.env.PORT || 5000;
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🕌  Quran O Itrat Academy API`);
+    console.log(`   ├─ Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   ├─ Port: ${PORT}`);
+    console.log(`   └─ URL:  http://localhost:${PORT}/api/health\n`);
+  });
 
-process.on('unhandledRejection', (err) => {
-  console.error('[Server] Unhandled rejection:', err.message);
-  server.close(() => process.exit(1));
-});
+  process.on('unhandledRejection', (err) => {
+    console.error('[Server] Unhandled rejection:', err.message);
+    server.close(() => process.exit(1));
+  });
+}
 
 module.exports = app;
